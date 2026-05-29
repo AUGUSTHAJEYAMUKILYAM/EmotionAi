@@ -1,15 +1,15 @@
-
-# transcribe.py — Multilingual speech-to-text using OpenAI Whisper via Replit AI Integrations
+# transcribe.py — Multilingual speech-to-text using Groq Whisper API
 # EmotionSense: AI Emotion Detection for Emergency Calls
 #
-# Uses gpt-4o-mini-transcribe for fast, accurate multilingual transcription.
+# Uses Groq's free Whisper API for fast, accurate multilingual transcription.
 # Supports 50+ languages automatically via Whisper's language detection.
 #
 # How to run the app:
 #   streamlit run app.py
 
 import os
-from openai import OpenAI
+import streamlit as st
+from groq import Groq
 
 # Language code → human-readable name mapping for display purposes
 LANGUAGE_NAMES = {
@@ -30,28 +30,23 @@ LANGUAGE_NAMES = {
     "cy": "Welsh",
 }
 
-
-def get_openai_client() -> OpenAI:
+def get_groq_client() -> Groq:
     """
-    Create an OpenAI client configured for Replit AI Integrations.
-    Uses AI_INTEGRATIONS_OPENAI_BASE_URL and AI_INTEGRATIONS_OPENAI_API_KEY
-    environment variables (automatically set by Replit — no manual setup needed).
+    Create a Groq client using the GROQ_API_KEY from Streamlit secrets
+    or environment variables.
     """
-    base_url = os.environ.get("AI_INTEGRATIONS_OPENAI_BASE_URL")
-    api_key = os.environ.get("AI_INTEGRATIONS_OPENAI_API_KEY", "replit")
-
-    if not base_url:
+    api_key = st.secrets.get("GROQ_API_KEY") or os.environ.get("GROQ_API_KEY")
+    if not api_key:
         raise RuntimeError(
-            "AI_INTEGRATIONS_OPENAI_BASE_URL is not set. "
-            "Ensure the OpenAI AI Integration is configured in your Replit project."
+            "GROQ_API_KEY is not set. "
+            "Add it to your Streamlit secrets or environment variables."
         )
-
-    return OpenAI(base_url=base_url, api_key=api_key)
+    return Groq(api_key=api_key)
 
 
 def transcribe_audio(audio_path: str) -> dict:
     """
-    Transcribe an audio file using OpenAI's Whisper (gpt-4o-mini-transcribe).
+    Transcribe an audio file using Groq's Whisper API.
     Automatically detects the spoken language — supports 50+ languages.
 
     Args:
@@ -60,16 +55,16 @@ def transcribe_audio(audio_path: str) -> dict:
     Returns:
         dict with keys:
             - "text" (str): The transcribed text
-            - "language" (str): Detected language code (e.g. "en", "fr", "ar")
+            - "language" (str): Detected language code (e.g. "en", "fr", "ta")
             - "language_name" (str): Human-readable language name
     """
-    client = get_openai_client()
+    client = get_groq_client()
 
     with open(audio_path, "rb") as audio_file:
         response = client.audio.transcriptions.create(
-            model="gpt-4o-mini-transcribe",
+            model="whisper-large-v3",
             file=audio_file,
-            response_format="json",
+            response_format="verbose_json",
         )
 
     language_code = getattr(response, "language", None) or "unknown"
