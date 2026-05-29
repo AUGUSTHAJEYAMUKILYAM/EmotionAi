@@ -1,30 +1,72 @@
-
 # app.py — Streamlit application entry point
 # EmotionSense: AI Emotion Detection for Emergency Calls
-#
-# How to run:
-#   streamlit run app.py --server.port 5000
 
+import sys
+import traceback
 import os
 import tempfile
 import concurrent.futures
 
-import matplotlib.pyplot as plt
-import numpy as np
-import streamlit as st
+print("Starting EmotionSense app...", flush=True)
 
-from model import EMOTIONS, load_model, predict_emotion
-from utils import extract_features
-from transcribe import transcribe_audio
+try:
+    import matplotlib
+    matplotlib.use('Agg')  # Fix for headless server
+    import matplotlib.pyplot as plt
+    print("matplotlib loaded", flush=True)
+except Exception as e:
+    print(f"matplotlib error: {e}", flush=True)
 
-# ── Page configuration ─────────────────────────────────────────────────────────
+try:
+    import numpy as np
+    print("numpy loaded", flush=True)
+except Exception as e:
+    print(f"numpy error: {e}", flush=True)
+
+try:
+    import streamlit as st
+    print("streamlit loaded", flush=True)
+except Exception as e:
+    print(f"streamlit error: {e}", flush=True)
+    sys.exit(1)
+
+try:
+    from model import EMOTIONS, load_model, predict_emotion
+    print("model loaded", flush=True)
+except Exception as e:
+    print(f"model error: {e}", flush=True)
+    traceback.print_exc()
+    st.error(f"Failed to load model: {e}")
+    sys.exit(1)
+
+try:
+    from utils import extract_features
+    print("utils loaded", flush=True)
+except Exception as e:
+    print(f"utils error: {e}", flush=True)
+    traceback.print_exc()
+    st.error(f"Failed to load utils: {e}")
+    sys.exit(1)
+
+try:
+    from transcribe import transcribe_audio
+    print("transcribe loaded", flush=True)
+except Exception as e:
+    print(f"transcribe error: {e}", flush=True)
+    traceback.print_exc()
+    st.error(f"Failed to load transcribe: {e}")
+    sys.exit(1)
+
+print("All imports successful!", flush=True)
+
+# ── Page configuration ──────────────────────────────────────────────────────
 st.set_page_config(
     page_title="EmotionSense",
     page_icon="🎙️",
     layout="centered",
 )
 
-# ── Title & introduction ────────────────────────────────────────────────────────
+# ── Title & introduction ────────────────────────────────────────────────────
 st.title("🎙️ EmotionSense – AI Emotion Detection for Emergency Calls")
 st.markdown(
     """
@@ -36,14 +78,19 @@ st.markdown(
 
 st.divider()
 
-# ── Model loading (cached so it only trains once per session) ───────────────────
+# ── Model loading (cached so it only trains once per session) ───────────────
 @st.cache_resource(show_spinner="Initializing emotion recognition model…")
 def get_model():
     return load_model()
 
-clf, scaler = get_model()
+try:
+    clf, scaler = get_model()
+except Exception as e:
+    st.error(f"Model initialization failed: {e}")
+    traceback.print_exc()
+    st.stop()
 
-# ── File uploader ───────────────────────────────────────────────────────────────
+# ── File uploader ───────────────────────────────────────────────────────────
 uploaded_file = st.file_uploader(
     "Upload an audio file",
     type=["wav", "mp3", "m4a", "ogg", "flac", "webm"],
@@ -54,10 +101,8 @@ if uploaded_file is not None:
     st.audio(uploaded_file, format=f"audio/{uploaded_file.name.split('.')[-1]}")
     st.caption(f"Uploaded: **{uploaded_file.name}** ({uploaded_file.size / 1024:.1f} KB)")
 
-    # ── Analyze button ──────────────────────────────────────────────────────────
     if st.button("🔍 Analyze Emotion", type="primary", use_container_width=True):
 
-        # Save to a temp file so librosa and OpenAI can read it
         suffix = "." + uploaded_file.name.split(".")[-1]
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             tmp.write(uploaded_file.read())
@@ -70,8 +115,7 @@ if uploaded_file is not None:
         transcription_error = None
         feature_error = None
 
-        # ── Run Whisper transcription + feature extraction in parallel ──────────
-        with st.spinner("Transcribing audio with Whisper AI and analyzing emotion…"):
+        with st.spinner("Transcribing audio and analyzing emotion…"):
 
             def run_transcription():
                 return transcribe_audio(tmp_path)
@@ -89,13 +133,14 @@ if uploaded_file is not None:
                     transcription_result = fut_transcription.result(timeout=60)
                 except Exception as e:
                     transcription_error = str(e)
+                    print(f"Transcription error: {e}", flush=True)
 
                 try:
                     features, predicted_emotion, confidence_scores = fut_features.result(timeout=30)
                 except Exception as e:
                     feature_error = str(e)
+                    print(f"Feature extraction error: {e}", flush=True)
 
-        # Clean up temp file
         if os.path.exists(tmp_path):
             os.unlink(tmp_path)
 
@@ -105,7 +150,7 @@ if uploaded_file is not None:
 
         st.divider()
 
-        # ── Prediction result ───────────────────────────────────────────────────
+        # ── Prediction result ───────────────────────────────────────────────
         emotion_emoji = {
             "Angry": "😡",
             "Fear":  "😨",
@@ -121,7 +166,6 @@ if uploaded_file is not None:
             unsafe_allow_html=True,
         )
 
-        # ── High-distress alert ─────────────────────────────────────────────────
         if predicted_emotion in ("Angry", "Fear"):
             st.error(
                 "⚠️ High distress detected. Operator attention required.",
@@ -130,14 +174,11 @@ if uploaded_file is not None:
 
         st.divider()
 
-        # ── Whisper transcription result ────────────────────────────────────────
+        # ── Transcription ───────────────────────────────────────────────────
         st.subheader("🌐 Multilingual Transcription (Whisper AI)")
 
         if transcription_error:
-            st.warning(
-                f"Transcription unavailable: {transcription_error}",
-                icon="⚠️",
-            )
+            st.warning(f"Transcription unavailable: {transcription_error}", icon="⚠️")
         elif transcription_result:
             lang_name = transcription_result.get("language_name", "Unknown")
             lang_code = transcription_result.get("language", "")
@@ -162,7 +203,7 @@ if uploaded_file is not None:
 
         st.divider()
 
-        # ── Confidence score bar chart ──────────────────────────────────────────
+        # ── Confidence chart ────────────────────────────────────────────────
         st.subheader("Emotion Confidence Scores")
 
         emotions_list = list(confidence_scores.keys())
@@ -199,7 +240,7 @@ if uploaded_file is not None:
         st.pyplot(fig)
         plt.close(fig)
 
-        # ── Feature summary (collapsible) ───────────────────────────────────────
+        # ── Feature summary ─────────────────────────────────────────────────
         with st.expander("📊 View extracted audio features"):
             import pandas as pd
 
@@ -221,10 +262,10 @@ else:
         icon="ℹ️",
     )
 
-# ── Footer ──────────────────────────────────────────────────────────────────────
+# ── Footer ──────────────────────────────────────────────────────────────────
 st.divider()
 st.caption(
-    "EmotionSense uses OpenAI Whisper for multilingual transcription and a RandomForest "
+    "EmotionSense uses Groq Whisper for multilingual transcription and a RandomForest "
     "classifier on MFCC/pitch/energy features for emotion detection. "
     "For demonstration purposes — not a substitute for professional emergency services."
 )
